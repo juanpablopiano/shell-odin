@@ -26,6 +26,8 @@ main :: proc() {
 			} else {
 				fmt.printfln("%v: not found", text)
 			}
+		case:
+			fmt.printfln("%v: command not found", command)
 		}
 	}
 }
