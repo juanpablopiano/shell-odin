@@ -19,8 +19,15 @@ main :: proc() {
 		} else if strings.has_prefix(command, "echo ") {
 			text := strings.trim(command[5:], " ")
 			fmt.printfln(text)
+		} else if strings.has_prefix(command, "type ") {
+			text := strings.trim(strings.split(command[5:], " ")[0], " ")
+			if text == "echo" || text == "type" || text == "exit" {
+				fmt.printfln("%v is a shell builtin", text)
+			} else {
+				fmt.printfln("%v: command not found", command)
+			}
 		} else {
-			fmt.printf("%v: command not found\n", command)
+			fmt.printfln("%v: command not found", command)
 		}
 	}
 }
