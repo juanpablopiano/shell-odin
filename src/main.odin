@@ -20,11 +20,11 @@ main :: proc() {
 			text := strings.trim(command[5:], " ")
 			fmt.printfln(text)
 		} else if strings.has_prefix(command, "type ") {
-			text := strings.trim(strings.split(command[5:], " ")[0], " ")
+			text := strings.trim(command[5:], " ")
 			if text == "echo" || text == "type" || text == "exit" {
 				fmt.printfln("%v is a shell builtin", text)
 			} else {
-				fmt.printfln("type %v: not found", command)
+				fmt.printfln("%v: not found", text)
 			}
 		} else {
 			fmt.printfln("%v: command not found", command)
