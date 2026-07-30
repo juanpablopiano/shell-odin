@@ -11,5 +11,5 @@ main :: proc() {
     if err != nil do return
     command := string(buf[:n-1])
 
-    fmt.printf("%v: command %v not found", command, command)
+    fmt.printf("%v: command not found", command)
 }
