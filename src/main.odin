@@ -24,7 +24,7 @@ main :: proc() {
 			if text == "echo" || text == "type" || text == "exit" {
 				fmt.printfln("%v is a shell builtin", text)
 			} else {
-				fmt.printfln("%v: command not found", command)
+				fmt.printfln("%v: not found", command)
 			}
 		} else {
 			fmt.printfln("%v: command not found", command)
