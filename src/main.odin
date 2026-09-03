@@ -14,7 +14,7 @@ main :: proc() {
 		if err != nil do return
 		command := strings.trim_right(string(buf[:n]), "\r\n")
 
-		repl_switch: switch {
+		switch {
 		case command == "exit":
 			break repl
 		case strings.has_prefix(command, "echo "):
@@ -24,26 +24,33 @@ main :: proc() {
 			if text == "echo" || text == "type" || text == "exit" {
 				fmt.printfln("%v is a shell builtin", text)
 			} else {
-				path := os.get_env("PATH", context.temp_allocator)
-				dirs, ok := os.split_path_list(path, context.temp_allocator)
-				if err != nil do return
-
-				for dir in dirs {
-					full_path := strings.concatenate({dir, "/", text})
-					if !os.exists(full_path) do continue
-					info, err := os.stat(full_path, context.temp_allocator);
-					if err != os.ERROR_NONE do continue
-					x_permission := .Execute_User in info.mode
-
-					if x_permission {
-						fmt.printfln("%v is %v", text, full_path)
-						break repl_switch
-					}
+				full_path, ok := find_executable(text)
+				if !ok {
+					fmt.printfln("%v: not found", text)
+				} else {
+					fmt.printfln("%v is %v", text, full_path)
 				}
-				fmt.printfln("%v: not found", text)
 			}
 		case:
 			fmt.printfln("%v: command not found", command)
 		}
 	}
+}
+
+find_executable :: proc(text: string) -> (full_path := "", ok := false) {
+	path := os.get_env("PATH", context.temp_allocator)
+	if path == "" do return
+	dirs, err := os.split_path_list(path, context.temp_allocator)
+	if err != nil do return
+
+	for dir in dirs {
+		full_path := strings.concatenate({dir, "/", text})
+		if !os.exists(full_path) do continue
+		info, err := os.stat(full_path, context.temp_allocator);
+		if err != os.ERROR_NONE do continue
+		x_permission := .Execute_User in info.mode
+
+		if x_permission do return full_path, true
+	}
+	return "", false
 }
