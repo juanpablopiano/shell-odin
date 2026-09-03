@@ -14,7 +14,7 @@ main :: proc() {
 		if err != nil do return
 		command := strings.trim_right(string(buf[:n]), "\r\n")
 
-		switch {
+		repl_switch: switch {
 		case command == "exit":
 			break repl
 		case strings.has_prefix(command, "echo "):
@@ -24,6 +24,18 @@ main :: proc() {
 			if text == "echo" || text == "type" || text == "exit" {
 				fmt.printfln("%v is a shell builtin", text)
 			} else {
+				path := os.get_env("PATH", context.temp_allocator)
+				dirs, ok := os.split_path_list(path, context.temp_allocator)
+				if err != nil do return
+
+				for dir in dirs {
+					full_path := strings.concatenate({dir, "/", text})
+					exists := os.exists(full_path)
+					if exists {
+						fmt.printfln("%v is %v", text, full_path)
+						break repl_switch
+					}
+				}
 				fmt.printfln("%v: not found", text)
 			}
 		case:
