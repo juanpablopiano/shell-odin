@@ -30,8 +30,12 @@ main :: proc() {
 
 				for dir in dirs {
 					full_path := strings.concatenate({dir, "/", text})
-					exists := os.exists(full_path)
-					if exists {
+					if !os.exists(full_path) do continue
+					info, err := os.stat(full_path, context.temp_allocator);
+					if err != os.ERROR_NONE do continue
+					x_permission := .Execute_User in info.mode
+
+					if x_permission {
 						fmt.printfln("%v is %v", text, full_path)
 						break repl_switch
 					}
