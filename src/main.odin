@@ -49,7 +49,7 @@ find_executable :: proc(text: string) -> (full_path := "", ok := false) {
 		info, err := os.stat(full_path, context.temp_allocator);
 		if err != os.ERROR_NONE do continue
 		// x_permission := .Execute_User in info.mode
-		x_permission := info.mode & os.Permissions_All != {}
+		x_permission := info.mode & os.Permissions_Execute_All != {}
 
 		if x_permission do return full_path, true
 	}
