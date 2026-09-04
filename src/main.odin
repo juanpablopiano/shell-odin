@@ -4,35 +4,47 @@ import "base:runtime"
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import "core:c/libc"
 
 main :: proc() {
 	buf: [1024]byte
 
 	repl: for {
+		defer free_all(context.temp_allocator)
 		fmt.printf("$ ")
 		n, err := os.read(os.stdin, buf[:])
 		if err != nil do return
-		command := strings.trim_right(string(buf[:n]), "\r\n")
+		input := strings.trim_right(string(buf[:n]), "\r\n")
 
 		switch {
-		case command == "exit":
+		case input == "exit":
 			break repl
-		case strings.has_prefix(command, "echo "):
-			fmt.printfln("%s", command[5:])
-		case strings.has_prefix(command, "type "):
-			text := strings.trim(command[5:], " ")
-			if text == "echo" || text == "type" || text == "exit" {
-				fmt.printfln("%v is a shell builtin", text)
+		case strings.has_prefix(input, "echo "):
+			fmt.printfln("%s", input[5:])
+		case strings.has_prefix(input, "type "):
+			command := strings.trim(input[5:], " ")
+			if command == "echo" || command == "type" || command == "exit" {
+				fmt.printfln("%v is a shell builtin", command)
 			} else {
-				full_path, ok := find_executable(text)
+				full_path, ok := find_executable(command)
 				if !ok {
-					fmt.printfln("%v: not found", text)
+					fmt.printfln("%v: not found", command)
 				} else {
-					fmt.printfln("%v is %v", text, full_path)
+					fmt.printfln("%v is %v", command, full_path)
 				}
 			}
 		case:
-			fmt.printfln("%v: command not found", command)
+			parts := strings.fields(input)
+
+			full_path, ok := find_executable(parts[0])
+			if !ok {
+				fmt.printfln("%v: command not found", parts[0])
+			} else {
+				system_error := libc.system(strings.clone_to_cstring(input))
+				if system_error != 0 {
+					fmt.printf("exited with status: %d\n", i16(system_error))
+				}
+			}
 		}
 	}
 }
