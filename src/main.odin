@@ -34,16 +34,27 @@ main :: proc() {
 				}
 			}
 		case:
-			parts := strings.fields(input)
+			parts := strings.fields(input, context.temp_allocator)
+			if len(parts) == 0 do continue
 
 			full_path, ok := find_executable(parts[0])
 			if !ok {
 				fmt.printfln("%v: command not found", parts[0])
 			} else {
-				system_error := libc.system(strings.clone_to_cstring(input))
+				system_error := libc.system(strings.clone_to_cstring(input, context.temp_allocator))
 				if system_error != 0 {
 					fmt.printf("exited with status: %d\n", i16(system_error))
 				}
+			// } else {
+			// 	parts[0] = full_path
+			// 	desc := os.Process_Desc{
+	  //       command = parts,
+	  //       stdin   = os.stdin,
+	  //       stdout  = os.stdout,
+	  //       stderr  = os.stderr,
+   //  		}
+   //   		process := os.process_start(desc) or_else panic("no se pudo iniciar")
+   //     	state, _ := os.process_wait(process)
 			}
 		}
 	}
@@ -56,12 +67,10 @@ find_executable :: proc(text: string) -> (full_path := "", ok := false) {
 	if err != nil do return
 
 	for dir in dirs {
-		full_path := strings.concatenate({dir, "/", text})
-		if !os.exists(full_path) do continue
-		info, err := os.stat(full_path, context.temp_allocator);
-		if err != os.ERROR_NONE do continue
+		candidate := strings.concatenate({dir, "/", text}, context.temp_allocator)
+		info := os.stat(candidate, context.temp_allocator) or_continue
 
-		if info.mode & os.Permissions_Execute_All != {} do return full_path, true
+		if info.mode & os.Permissions_Execute_All != {} do return candidate, true
 	}
-	return "", false
+	return
 }
