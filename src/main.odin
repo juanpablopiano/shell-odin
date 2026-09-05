@@ -12,6 +12,7 @@ main :: proc() {
 	  "echo" = {},
 	  "type" = {},
 	  "pwd"  = {},
+	  "cd"  = {},
 	}
 	defer delete(Builtins)
 
@@ -34,8 +35,7 @@ main :: proc() {
 			fmt.println(wd)
 		case input[0] == "cd":
 			directory := input[1]
-			err := os.chdir(directory)
-			if err != nil {
+			if err := os.chdir(directory); err != nil {
 				fmt.printfln("cd: %v: No such file or directory", directory)
 			}
 		case input[0] == "type":
