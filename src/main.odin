@@ -35,6 +35,7 @@ main :: proc() {
 			fmt.println(wd)
 		case input[0] == "cd":
 			directory := input[1]
+			if directory == "~" do directory, _ = os.user_home_dir(context.temp_allocator)
 			if err := os.chdir(directory); err != nil {
 				fmt.printfln("cd: %v: No such file or directory", directory)
 			}
