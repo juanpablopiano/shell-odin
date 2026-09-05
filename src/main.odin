@@ -32,6 +32,12 @@ main :: proc() {
 		case input[0] == "pwd":
 			wd, _ := os.get_working_directory(context.temp_allocator)
 			fmt.println(wd)
+		case input[0] == "cd":
+			directory := input[1]
+			err := os.chdir(directory)
+			if err != nil {
+				fmt.printfln("cd: %v: No such file or directory", directory)
+			}
 		case input[0] == "type":
 			if len(input) <= 1 do continue
 			command := input[1]
