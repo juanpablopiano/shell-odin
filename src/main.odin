@@ -113,15 +113,18 @@ tokenize :: proc(line: string, allocator := context.allocator) -> []string {
 	state := QuoteState.None
 	has_token: bool
 	for r in line {
-		if r == '\'' {
-			if state == .None {
-				state = .Single
-				has_token = true
-			}
-			else do state = .None
+		switch r {
+		case '\'':
+			if state == .Double do break
+			state = state == .None ? .Single : .None
+			has_token = true
 			continue
-		}
-		if r == '\t' || r == ' '  || r == '\n' {
+		case '\"':
+			if state == .Single do break
+			state = state == .None ? .Double : .None
+			has_token = true
+			continue
+		case '\t', ' ', '\n':
 			if state == .None {
 				if has_token {
 					append(&result, strings.clone(strings.to_string(accumulator), allocator))
