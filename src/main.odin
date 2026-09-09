@@ -10,6 +10,7 @@ QuoteState :: enum {
 	None,
 	Single,
 	Double,
+	Backslash,
 }
 
 main :: proc() {
@@ -114,13 +115,18 @@ tokenize :: proc(line: string, allocator := context.allocator) -> []string {
 	has_token: bool
 	for r in line {
 		switch r {
+		case '\\':
+			if state == .Backslash do break
+			state = state == .None ? .Backslash : .None
+			has_token = true
+			continue
 		case '\'':
-			if state == .Double do break
+			if state == .Double || state == .Backslash do break
 			state = state == .None ? .Single : .None
 			has_token = true
 			continue
 		case '\"':
-			if state == .Single do break
+			if state == .Single || state == .Backslash do break
 			state = state == .None ? .Double : .None
 			has_token = true
 			continue
