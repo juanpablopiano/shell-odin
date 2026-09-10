@@ -85,6 +85,10 @@ is_delimiter :: proc(r: rune) -> bool {
 	return r == ' ' || r == '\t' || r == '\n'
 }
 
+is_escapable_in_double :: proc(r: rune) -> bool {
+	return r == '\"' || r == '\\' || r == '`' || r == '$' || r == '\n'
+}
+
 find_executable :: proc(text: string, allocator := context.allocator) -> (full_path := "", ok := false) {
 	path := os.get_env("PATH", allocator)
 	if path == "" do return
@@ -123,6 +127,9 @@ tokenize :: proc(line: string, allocator := context.allocator) -> []string {
 		has_token = true
 
 		if escaped {
+			if state == .Double && !is_escapable_in_double(r) {
+				strings.write_rune(&accumulator, '\\')
+			}
 			strings.write_rune(&accumulator, r)
 			escaped = false
 			continue
@@ -130,7 +137,7 @@ tokenize :: proc(line: string, allocator := context.allocator) -> []string {
 
 		switch r {
 		case '\\':
-			if state != .None do break
+			if state == .Single do break
 			escaped = true
 			continue
 		case '\'':
