@@ -64,18 +64,22 @@ main :: proc() {
 			}
 			fmt.printfln("%v is %v", command, full_path)
 		case:
-			full_path, ok := find_executable(input[0])
-			if !ok {
-				fmt.printfln("%v: command not found", input[0])
-				continue
-			}
+			// full_path, ok := find_executable(input[0])
+			// if !ok {
+			// 	fmt.printfln("%v: command not found", input[0])
+			// 	continue
+			// }
 			desc := os.Process_Desc{
         command = input,
         stdin   = os.stdin,
         stdout  = os.stdout,
         stderr  = os.stderr,
   		}
-  		process := os.process_start(desc) or_else panic("Couldn't init")
+  		process, err := os.process_start(desc)
+    	if err != nil {
+   			fmt.printfln("%v: command not found", input[0])
+        continue
+     	}
      	state, _ := os.process_wait(process)
 		}
 	}
