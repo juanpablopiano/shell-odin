@@ -1,6 +1,6 @@
-#+feature dynamic-literals
 package main
 
+import "core:slice"
 import "base:runtime"
 import "core:fmt"
 import "core:os"
@@ -10,18 +10,11 @@ QuoteState :: enum {
 	None,
 	Single,
 	Double,
-	Backslash,
 }
+@(rodata)
+BUILTINS := [?]string{"exit", "echo", "type", "pwd", "cd"}
 
 main :: proc() {
-	Builtins := map[string]struct{}{
-	  "exit" = {},
-	  "echo" = {},
-	  "type" = {},
-	  "pwd"  = {},
-	  "cd"  = {},
-	}
-	defer delete(Builtins)
 
 	buf: [1024]byte
 
@@ -36,44 +29,42 @@ main :: proc() {
 
 		command := input[0]
 
-		switch {
-		case command == "exit":
+		switch command {
+		case "exit":
 			break repl
-		case command == "echo":
+		case "echo":
 			text := strings.join(input[1:], " ")
 			fmt.println(text)
-		case command == "pwd":
+		case "pwd":
 			wd, _ := os.get_working_directory(context.allocator)
 			fmt.println(wd)
-		case command == "cd":
-			directory := len(input) > 1 ?  input[1] : ""
-			if directory == "~" || directory == "" {
-				directory, _ = os.user_home_dir(context.allocator)
-			} else if directory[0] == '~' {
+		case "cd":
+			directory := len(input) > 1 ? input[1] : "~"
+			if directory == "" do continue
+			if directory[0] == '~' {
 				home_dir, _ := os.user_home_dir(context.allocator)
-				dir, _ := strings.replace(directory, "~", "", 1)
-				directory = strings.concatenate({home_dir, dir})
+				directory = strings.concatenate({home_dir, directory[1:]})
 			}
 			if err := os.chdir(directory); err != nil {
 				fmt.printfln("cd: %v: No such file or directory", directory)
 			}
-		case command == "type":
+		case "type":
 			if len(input) <= 1 do continue
 			command := input[1]
 
-			if command in Builtins {
+			if slice.contains(BUILTINS[:], command) {
 				fmt.printfln("%v is a shell builtin", command)
 				continue
 			}
 
-			full_path, ok := find_executable(command, context.allocator)
+			full_path, ok := find_executable(command)
 			if !ok {
 				fmt.printfln("%v: not found", command)
 				continue
 			}
 			fmt.printfln("%v is %v", command, full_path)
 		case:
-			full_path, ok := find_executable(input[0], context.allocator)
+			full_path, ok := find_executable(input[0])
 			if !ok {
 				fmt.printfln("%v: command not found", input[0])
 				continue
@@ -90,6 +81,10 @@ main :: proc() {
 	}
 }
 
+is_delimiter :: proc(r: rune) -> bool {
+	return r == ' ' || r == '\t' || r == '\n'
+}
+
 find_executable :: proc(text: string, allocator := context.allocator) -> (full_path := "", ok := false) {
 	path := os.get_env("PATH", allocator)
 	if path == "" do return
@@ -97,7 +92,7 @@ find_executable :: proc(text: string, allocator := context.allocator) -> (full_p
 	if err != nil do return
 
 	for dir in dirs {
-		candidate := strings.concatenate({dir, "/", text}, allocator)
+		candidate := strings.concatenate({dir, "/", text})
 		info := os.stat(candidate, allocator) or_continue
 
 		if info.type != .Regular do continue
@@ -113,36 +108,43 @@ tokenize :: proc(line: string, allocator := context.allocator) -> []string {
 
 	state := QuoteState.None
 	has_token: bool
+	escaped: bool
+
 	for r in line {
+		if state == .None && !escaped && is_delimiter(r) {
+			if has_token {
+        append(&result, strings.clone(strings.to_string(accumulator), allocator))
+        strings.builder_reset(&accumulator)
+        has_token = false
+			}
+			continue
+		}
+
+		has_token = true
+
+		if escaped {
+			strings.write_rune(&accumulator, r)
+			escaped = false
+			continue
+		}
+
 		switch r {
 		case '\\':
-			if state == .Backslash do break
-			state = state == .None ? .Backslash : .None
-			has_token = true
+			if state != .None do break
+			escaped = true
 			continue
 		case '\'':
-			if state == .Double || state == .Backslash do break
+			if state == .Double do break
 			state = state == .None ? .Single : .None
-			has_token = true
 			continue
 		case '\"':
-			if state == .Single || state == .Backslash do break
+			if state == .Single do break
 			state = state == .None ? .Double : .None
-			has_token = true
 			continue
-		case '\t', ' ', '\n':
-			if state == .None {
-				if has_token {
-					append(&result, strings.clone(strings.to_string(accumulator), allocator))
-					strings.builder_reset(&accumulator)
-				}
-				has_token = false
-				continue
-			}
 		}
 		strings.write_rune(&accumulator, r)
-		has_token = true
 	}
+
 	if has_token {
     append(&result, strings.clone(strings.to_string(accumulator), allocator))
   }
