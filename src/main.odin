@@ -28,17 +28,15 @@ main :: proc() {
 		if len(input) == 0 do continue
 
 		out := os.stdout
+		errout := os.stderr
 
-		args, out_path := parse_redirect(input)
-		if out_path != "" {
-			file, open_err := os.create(out_path)
-			if open_err != nil {
-				fmt.printfln("%v: cannot create file", out_path)
-				continue
-			}
-			out = file
-		}
+		args, out_path, err_path := parse_redirect(input)
+
+		if file, fileExists := open_target(out_path); fileExists do out = file
+		if file, fileExists := open_target(err_path); fileExists do errout = file
+
 		defer if out != os.stdout do os.close(out)
+		defer if errout != os.stderr do os.close(errout)
 
 		if len(args) == 0 do continue
 		command := args[0]
@@ -60,33 +58,33 @@ main :: proc() {
 				directory = strings.concatenate({home_dir, directory[1:]})
 			}
 			if err := os.chdir(directory); err != nil {
-				fmt.printfln("cd: %v: No such file or directory", directory)
+				fmt.fprintfln(errout, "cd: %v: No such file or directory", directory)
 			}
 		case "type":
 			if len(args) <= 1 do continue
 			name := args[1]
 
 			if slice.contains(BUILTINS[:], name) {
-				fmt.printfln("%v is a shell builtin", name)
+				fmt.fprintfln(out, "%v is a shell builtin", name)
 				continue
 			}
 
 			full_path, ok := find_executable(name)
 			if !ok {
-				fmt.printfln("%v: not found", name)
+				fmt.fprintfln(errout, "%v: not found", name)
 				continue
 			}
-			fmt.printfln("%v is %v", name, full_path)
+			fmt.fprintfln(out, "%v is %v", name, full_path)
 		case:
 			desc := os.Process_Desc{
         command = args,
         stdin   = os.stdin,
         stdout  = out,
-        stderr  = os.stderr,
+        stderr  = errout,
   		}
   		process, err := os.process_start(desc)
     	if err != nil {
-   			fmt.printfln("%v: command not found", args[0])
+   			fmt.fprintfln(errout, "%v: command not found", args[0])
         continue
      	}
      	state, _ := os.process_wait(process)
@@ -102,17 +100,35 @@ is_escapable_in_double :: proc(r: rune) -> bool {
 	return r == '\"' || r == '\\' || r == '`' || r == '$' || r == '\n'
 }
 
-parse_redirect :: proc(tokens: []string) -> (args: []string, out_path: string) {
-	args = tokens
-	for token, i in tokens {
-		if token == ">" || token == "1>" {
-			if i + 1 < len(tokens) {
-				out_path = tokens[i + 1]
-				args = tokens[:i]
-				break
-			}
+open_target :: proc(path: string) -> (^os.File, bool) {
+	if path != "" {
+		file, open_err := os.create(path)
+		if open_err == nil {
+			return file, true
 		}
+		fmt.eprintfln("%v: cannot create file", path)
 	}
+	return nil, false
+}
+
+parse_redirect :: proc(tokens: []string) -> (args: []string, stdout_path: string, stderr_path: string) {
+	args_end := len(tokens)
+	for i := 0; i < len(tokens); i += 1 {
+		is_stdout := tokens[i] == ">" || tokens[i] == "1>"
+		is_stderr := tokens[i] == "2>"
+		if !is_stdout && !is_stderr do continue
+
+		if i < args_end do args_end = i
+		if i + 1 >= len(tokens) do break
+
+		if  is_stdout {
+			stdout_path = tokens[i + 1]
+		} else {
+			stderr_path = tokens[i + 1]
+		}
+		i += 1
+	}
+	args = tokens[:args_end]
 	return
 }
 
