@@ -27,19 +27,33 @@ main :: proc() {
 		input := tokenize(string(buf[:n]))
 		if len(input) == 0 do continue
 
-		command := input[0]
+		out := os.stdout
+
+		args, out_path := parse_redirect(input)
+		if out_path != "" {
+			file, open_err := os.create(out_path)
+			if open_err != nil {
+				fmt.printfln("%v: cannot create file", out_path)
+				continue
+			}
+			out = file
+		}
+		defer if out != os.stdout do os.close(out)
+
+		if len(args) == 0 do continue
+		command := args[0]
 
 		switch command {
 		case "exit":
 			break repl
 		case "echo":
-			text := strings.join(input[1:], " ")
-			fmt.println(text)
+			text := strings.join(args[1:], " ")
+			fmt.fprintln(out, text)
 		case "pwd":
 			wd, _ := os.get_working_directory(context.allocator)
-			fmt.println(wd)
+			fmt.fprintln(out, wd)
 		case "cd":
-			directory := len(input) > 1 ? input[1] : "~"
+			directory := len(args) > 1 ? args[1] : "~"
 			if directory == "" do continue
 			if directory[0] == '~' {
 				home_dir, _ := os.user_home_dir(context.allocator)
@@ -49,35 +63,30 @@ main :: proc() {
 				fmt.printfln("cd: %v: No such file or directory", directory)
 			}
 		case "type":
-			if len(input) <= 1 do continue
-			command := input[1]
+			if len(args) <= 1 do continue
+			name := args[1]
 
-			if slice.contains(BUILTINS[:], command) {
-				fmt.printfln("%v is a shell builtin", command)
+			if slice.contains(BUILTINS[:], name) {
+				fmt.printfln("%v is a shell builtin", name)
 				continue
 			}
 
-			full_path, ok := find_executable(command)
+			full_path, ok := find_executable(name)
 			if !ok {
-				fmt.printfln("%v: not found", command)
+				fmt.printfln("%v: not found", name)
 				continue
 			}
-			fmt.printfln("%v is %v", command, full_path)
+			fmt.printfln("%v is %v", name, full_path)
 		case:
-			// full_path, ok := find_executable(input[0])
-			// if !ok {
-			// 	fmt.printfln("%v: command not found", input[0])
-			// 	continue
-			// }
 			desc := os.Process_Desc{
-        command = input,
+        command = args,
         stdin   = os.stdin,
-        stdout  = os.stdout,
+        stdout  = out,
         stderr  = os.stderr,
   		}
   		process, err := os.process_start(desc)
     	if err != nil {
-   			fmt.printfln("%v: command not found", input[0])
+   			fmt.printfln("%v: command not found", args[0])
         continue
      	}
      	state, _ := os.process_wait(process)
@@ -91,6 +100,20 @@ is_delimiter :: proc(r: rune) -> bool {
 
 is_escapable_in_double :: proc(r: rune) -> bool {
 	return r == '\"' || r == '\\' || r == '`' || r == '$' || r == '\n'
+}
+
+parse_redirect :: proc(tokens: []string) -> (args: []string, out_path: string) {
+	args = tokens
+	for token, i in tokens {
+		if token == ">" || token == "1>" {
+			if i + 1 < len(tokens) {
+				out_path = tokens[i + 1]
+				args = tokens[:i]
+				break
+			}
+		}
+	}
+	return
 }
 
 find_executable :: proc(text: string, allocator := context.allocator) -> (full_path := "", ok := false) {
