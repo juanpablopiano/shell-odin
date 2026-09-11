@@ -6,16 +6,21 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
+Redirect :: struct {
+	path: string,
+	append: bool,
+}
+
 QuoteState :: enum {
 	None,
 	Single,
 	Double,
 }
+
 @(rodata)
 BUILTINS := [?]string{"exit", "echo", "type", "pwd", "cd"}
 
 main :: proc() {
-
 	buf: [1024]byte
 
 	repl: for {
@@ -100,31 +105,46 @@ is_escapable_in_double :: proc(r: rune) -> bool {
 	return r == '\"' || r == '\\' || r == '`' || r == '$' || r == '\n'
 }
 
-open_target :: proc(path: string) -> (^os.File, bool) {
-	if path != "" {
-		file, open_err := os.create(path)
-		if open_err == nil {
-			return file, true
-		}
-		fmt.eprintfln("%v: cannot create file", path)
+open_target :: proc(redir: Redirect) -> (^os.File, bool) {
+	if redir.path == "" do return nil, false
+
+	flags := os.File_Flags{.Write, .Create}
+	flags |= redir.append ? {.Append} : {.Trunc}
+
+	file, open_err := os.open(redir.path, flags, os.Permissions_Default_File)
+	if open_err != nil {
+		fmt.fprintfln(os.stderr, "%v: cannot create file", redir.path)
+		return nil, false
 	}
-	return nil, false
+	return file, true
 }
 
-parse_redirect :: proc(tokens: []string) -> (args: []string, stdout_path: string, stderr_path: string) {
+parse_redirect :: proc(tokens: []string) -> (args: []string, stdout_path, stderr_path: Redirect) {
 	args_end := len(tokens)
+	is_stdout, is_stderr, is_append: bool
 	for i := 0; i < len(tokens); i += 1 {
-		is_stdout := tokens[i] == ">" || tokens[i] == "1>"
-		is_stderr := tokens[i] == "2>"
-		if !is_stdout && !is_stderr do continue
+		t := tokens[i]
+		switch t {
+		case ">", "1>":   is_stdout = true
+		case ">>", "1>>": is_stdout = true; is_append = true
+		case "2>": 				is_stderr = true
+		case "2>>": 			is_stderr = true; is_append = true
+		case: 						continue
+		}
 
 		if i < args_end do args_end = i
 		if i + 1 >= len(tokens) do break
 
 		if  is_stdout {
-			stdout_path = tokens[i + 1]
+			stdout_path = {
+				tokens[i + 1],
+				is_append,
+			}
 		} else {
-			stderr_path = tokens[i + 1]
+			stderr_path = {
+				tokens[i + 1],
+				is_append,
+			}
 		}
 		i += 1
 	}
