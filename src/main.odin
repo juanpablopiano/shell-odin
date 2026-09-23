@@ -1,5 +1,6 @@
 package main
 
+import "core:sys/posix"
 import "core:slice"
 import "base:runtime"
 import "core:fmt"
@@ -21,15 +22,13 @@ QuoteState :: enum {
 BUILTINS := [?]string{"exit", "echo", "type", "pwd", "cd"}
 
 main :: proc() {
-	buf: [1024]byte
-
 	repl: for {
 		context.allocator = context.temp_allocator
 		defer free_all(context.temp_allocator)
 		fmt.printf("$ ")
-		n, err := os.read(os.stdin, buf[:])
-		if err != nil do return
-		input := tokenize(string(buf[:n]))
+		line, ok := read_line(context.allocator)
+		if !ok do break repl
+		input := tokenize(line)
 		if len(input) == 0 do continue
 
 		out := os.stdout
@@ -95,6 +94,85 @@ main :: proc() {
      	state, _ := os.process_wait(process)
 		}
 	}
+}
+
+enable_raw_mode :: proc() -> (original: posix.termios, ok: bool) {
+	if posix.tcgetattr(posix.STDIN_FILENO, &original) != .OK {
+		return
+	}
+
+	termios := original
+	termios.c_lflag -= { .ECHO, .ICANON, .ISIG }
+
+	termios.c_cc[.VMIN] = 1
+	termios.c_cc[.VTIME] = 0
+
+	if posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &termios) != .OK {
+		fmt.eprintln("There was an error with tcsetattr.")
+		return
+	}
+
+	return original, true
+}
+
+set_termios :: proc(t: posix.termios) {
+	t := t
+	posix.tcsetattr(posix.STDIN_FILENO, .TCSANOW, &t)
+}
+
+read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
+	original, raw_ok := enable_raw_mode()
+	defer if raw_ok do set_termios(original)
+
+	accumulator := strings.builder_make(allocator)
+	defer strings.builder_destroy(&accumulator)
+
+	buf: [1]byte
+
+	for {
+		n, err := os.read(os.stdin, buf[:])
+		if err != nil || n == 0 do return
+
+		switch buf[0] {
+			case '\r', '\n':
+				os.write(os.stdout, []byte{'\r', '\n'})
+				return strings.clone(strings.to_string(accumulator), allocator), true
+			case 0x03: // ctrl-C
+				os.write(os.stdout, transmute([]byte)string("^C\r\n"))
+				return "", true
+			case 0x04: // ctrl-D
+				if strings.builder_len(accumulator) > 0 do break
+				os.write(os.stdout, []byte{'\r', '\n'})
+				return
+			case 0x7f, 0x08: // backspace and del
+				_, w := strings.pop_rune(&accumulator)
+				if w > 0 {
+					os.write(os.stdout, []byte{'\b', ' ', '\b'})
+				}
+			case '\t':
+				completion, found := find_completion(strings.to_string(accumulator))
+				if !found do break
+
+				strings.write_string(&accumulator, completion)
+				strings.write_byte(&accumulator, ' ')
+				os.write(os.stdout, transmute([]byte)completion)
+				os.write(os.stdout, []byte{' '})
+			case:
+				strings.write_byte(&accumulator, buf[0])
+				os.write(os.stdout, buf[:n])
+		}
+	}
+}
+
+find_completion :: proc(prefix: string) -> (completion: string, ok: bool) {
+	if prefix == "" do return
+
+	for builtin in BUILTINS {
+		if strings.has_prefix(builtin, prefix) {
+			return builtin[len(prefix):], true
+		}
+	}
+	return
 }
 
 is_delimiter :: proc(r: rune) -> bool {
