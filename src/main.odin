@@ -20,12 +20,13 @@ QuoteState :: enum {
 
 @(rodata)
 BUILTINS := [?]string{"exit", "echo", "type", "pwd", "cd"}
+PROMPT :: "$ "
 
 main :: proc() {
 	repl: for {
 		context.allocator = context.temp_allocator
 		defer free_all(context.temp_allocator)
-		fmt.printf("$ ")
+		fmt.printf(PROMPT)
 		line, ok := read_line(context.allocator)
 		if !ok do break repl
 		input := tokenize(line)
@@ -128,10 +129,14 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 	defer strings.builder_destroy(&accumulator)
 
 	buf: [1]byte
+	last_was_tab: bool
 
 	for {
 		n, err := os.read(os.stdin, buf[:])
 		if err != nil || n == 0 do return
+
+		was_tab := last_was_tab
+		last_was_tab = buf[0] == '\t'
 
 		switch buf[0] {
 			case '\r', '\n':
@@ -150,16 +155,26 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 					os.write(os.stdout, []byte{'\b', ' ', '\b'})
 				}
 			case '\t':
-				completion, found := find_completion(strings.to_string(accumulator), context.temp_allocator)
-				if !found {
-					os.write(os.stdout, []byte{0x07})
-					break
-				}
+				prefix := strings.to_string(accumulator)
+				matches := find_completions(strings.to_string(accumulator), context.temp_allocator)
 
-				strings.write_string(&accumulator, completion)
-				strings.write_byte(&accumulator, ' ')
-				os.write(os.stdout, transmute([]byte)completion)
-				os.write(os.stdout, []byte{' '})
+				switch len(matches) {
+				case 0:
+					os.write(os.stdout, []byte{0x07})
+				case 1:
+					suffix := matches[0][len(prefix):]
+					strings.write_string(&accumulator, suffix)
+					strings.write_byte(&accumulator, ' ')
+					os.write(os.stdout, transmute([]byte)suffix)
+					os.write(os.stdout, []byte{' '})
+				case:
+					if !was_tab {
+						os.write(os.stdout, []byte{0x07})
+					} else {
+						list := strings.join(matches, "  ", context.temp_allocator)
+						fmt.printf("\r\n%s\r\n%s%s", list, PROMPT, prefix)
+					}
+				}
 			case:
 				strings.write_byte(&accumulator, buf[0])
 				os.write(os.stdout, buf[:n])
@@ -167,17 +182,17 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 	}
 }
 
-find_completion :: proc(prefix: string, allocator := context.allocator) -> (completion: string, ok: bool) {
-	if prefix == "" do return
+find_completions :: proc(prefix: string, allocator := context.allocator) -> []string {
+	if prefix == "" do return nil
 
+	names := make([dynamic]string, allocator)
 	for builtin in BUILTINS {
-		if strings.has_prefix(builtin, prefix) {
-			return builtin[len(prefix):], true
-		}
+		if strings.has_prefix(builtin, prefix) do append(&names, builtin)
 	}
+	append_executable_completions(&names, prefix, allocator)
 
-	name := find_executable_completion(prefix, allocator) or_return
-	return name[len(prefix):], true
+	slice.sort(names[:])
+	return slice.unique(names[:])
 }
 
 is_delimiter :: proc(r: rune) -> bool {
@@ -246,16 +261,16 @@ find_executable :: proc(text: string, allocator := context.allocator) -> (full_p
 	return
 }
 
-find_executable_completion :: proc(prefix: string, allocator := context.allocator) -> (completion: string, ok: bool) {
-	dirs := path_dirs(allocator) or_return
+append_executable_completions :: proc(names: ^[dynamic]string, prefix: string, allocator := context.allocator) {
+	dirs, ok := path_dirs(allocator)
+	if !ok do return
+
 	for dir in dirs {
 		entries := os.read_all_directory_by_path(dir, allocator) or_continue
-
 		for entry in entries {
-			if strings.has_prefix(entry.name, prefix) && is_executable(entry) do return entry.name, true
+			if strings.has_prefix(entry.name, prefix) && is_executable(entry) do append(names, entry.name)
 		}
 	}
-	return
 }
 
 path_dirs :: proc(allocator := context.allocator) -> (dirs: []string, ok: bool) {
