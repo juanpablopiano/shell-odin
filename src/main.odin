@@ -151,7 +151,10 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 				}
 			case '\t':
 				completion, found := find_completion(strings.to_string(accumulator))
-				if !found do break
+				if !found {
+					os.write(os.stdout, []byte{0x07})
+					break
+				}
 
 				strings.write_string(&accumulator, completion)
 				strings.write_byte(&accumulator, ' ')
