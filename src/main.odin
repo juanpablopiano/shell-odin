@@ -150,7 +150,7 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 					os.write(os.stdout, []byte{'\b', ' ', '\b'})
 				}
 			case '\t':
-				completion, found := find_completion(strings.to_string(accumulator))
+				completion, found := find_completion(strings.to_string(accumulator), context.temp_allocator)
 				if !found {
 					os.write(os.stdout, []byte{0x07})
 					break
@@ -167,7 +167,7 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 	}
 }
 
-find_completion :: proc(prefix: string) -> (completion: string, ok: bool) {
+find_completion :: proc(prefix: string, allocator := context.allocator) -> (completion: string, ok: bool) {
 	if prefix == "" do return
 
 	for builtin in BUILTINS {
@@ -175,7 +175,9 @@ find_completion :: proc(prefix: string) -> (completion: string, ok: bool) {
 			return builtin[len(prefix):], true
 		}
 	}
-	return
+
+	name := find_executable_completion(prefix, allocator) or_return
+	return name[len(prefix):], true
 }
 
 is_delimiter :: proc(r: rune) -> bool {
@@ -234,19 +236,38 @@ parse_redirect :: proc(tokens: []string) -> (args: []string, stdout_path, stderr
 }
 
 find_executable :: proc(text: string, allocator := context.allocator) -> (full_path := "", ok := false) {
-	path := os.get_env("PATH", allocator)
-	if path == "" do return
-	dirs, err := os.split_path_list(path, allocator)
-	if err != nil do return
-
+	dirs := path_dirs(allocator) or_return
 	for dir in dirs {
 		candidate := strings.concatenate({dir, "/", text})
 		info := os.stat(candidate, allocator) or_continue
 
-		if info.type != .Regular do continue
-		if info.mode & os.Permissions_Execute_All != {} do return candidate, true
+		if is_executable(info) do return candidate, true
 	}
 	return
+}
+
+find_executable_completion :: proc(prefix: string, allocator := context.allocator) -> (completion: string, ok: bool) {
+	dirs := path_dirs(allocator) or_return
+	for dir in dirs {
+		entries := os.read_all_directory_by_path(dir, allocator) or_continue
+
+		for entry in entries {
+			if strings.has_prefix(entry.name, prefix) && is_executable(entry) do return entry.name, true
+		}
+	}
+	return
+}
+
+path_dirs :: proc(allocator := context.allocator) -> (dirs: []string, ok: bool) {
+	path := os.get_env("PATH", allocator)
+	if path == "" do return
+	err: os.Error
+	dirs, err = os.split_path_list(path, allocator)
+	return dirs, err == nil
+}
+
+is_executable :: proc(info: os.File_Info) -> bool {
+	return info.type == .Regular && info.mode & os.Permissions_Execute_All != {}
 }
 
 tokenize :: proc(line: string, allocator := context.allocator) -> []string {
