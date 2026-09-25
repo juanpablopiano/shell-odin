@@ -156,19 +156,19 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 				}
 			case '\t':
 				prefix := strings.to_string(accumulator)
-				matches := find_completions(strings.to_string(accumulator), context.temp_allocator)
+				matches := find_completions(prefix, context.temp_allocator)
 
 				switch len(matches) {
 				case 0:
 					os.write(os.stdout, []byte{0x07})
 				case 1:
-					suffix := matches[0][len(prefix):]
-					strings.write_string(&accumulator, suffix)
-					strings.write_byte(&accumulator, ' ')
-					os.write(os.stdout, transmute([]byte)suffix)
-					os.write(os.stdout, []byte{' '})
+					insert_text(&accumulator, matches[0][len(prefix):])
+					insert_text(&accumulator, " ")
 				case:
-					if !was_tab {
+					lcp := longest_common_prefix(matches[0], matches[len(matches)-1])
+					if len(lcp) > len(prefix) {
+						insert_text(&accumulator, lcp[len(prefix):])
+					} else if !was_tab {
 						os.write(os.stdout, []byte{0x07})
 					} else {
 						list := strings.join(matches, "  ", context.temp_allocator)
@@ -180,6 +180,19 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 				os.write(os.stdout, buf[:n])
 		}
 	}
+}
+
+longest_common_prefix :: proc(a, b: string) -> string {
+	n := min(len(a), len(b))
+	for i in 0..<n {
+		if a[i] != b[i] do return a[:i]
+	}
+	return a[:n]
+}
+
+insert_text :: proc(b: ^strings.Builder, text: string) {
+	strings.write_string(b, text)
+	os.write(os.stdout, transmute([]byte)text)
 }
 
 find_completions :: proc(prefix: string, allocator := context.allocator) -> []string {
