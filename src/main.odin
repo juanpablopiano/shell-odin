@@ -157,21 +157,27 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 			case '\t':
 				line := strings.to_string(accumulator)
 				idx := strings.last_index_byte(line, ' ')
-				prefix := line[idx + 1:]
+				word := line[idx + 1:]
+				dir, base := ".", word
+				if idx != -1 {
+					if slash := strings.last_index_byte(word, '/'); slash != -1 {
+						dir, base = word[:slash + 1], word[slash + 1:]
+					}
+				}
 				matches := idx == -1 \
-					? find_command_completions(prefix, context.temp_allocator) \
-					: find_file_completions(prefix, context.temp_allocator)
+					? find_command_completions(base, context.temp_allocator) \
+					: find_file_completions(dir, base, context.temp_allocator)
 
 				switch len(matches) {
 				case 0:
 					os.write(os.stdout, []byte{0x07})
 				case 1:
-					insert_text(&accumulator, matches[0][len(prefix):])
+					insert_text(&accumulator, matches[0][len(base):])
 					insert_text(&accumulator, " ")
 				case:
 					lcp := longest_common_prefix(matches[0], matches[len(matches)-1])
-					if len(lcp) > len(prefix) {
-						insert_text(&accumulator, lcp[len(prefix):])
+					if len(lcp) > len(base) {
+						insert_text(&accumulator, lcp[len(base):])
 					} else if !was_tab {
 						os.write(os.stdout, []byte{0x07})
 					} else {
@@ -212,9 +218,9 @@ find_command_completions :: proc(prefix: string, allocator := context.allocator)
 	return slice.unique(names[:])
 }
 
-find_file_completions :: proc(prefix: string, allocator := context.allocator) -> []string {
+find_file_completions :: proc(dir, prefix: string, allocator := context.allocator) -> []string {
 	names := make([dynamic]string, allocator)
-	append_file_completions(&names, prefix, allocator)
+	append_file_completions(&names, dir, prefix, allocator)
 	slice.sort(names[:])
 	return names[:]
 }
@@ -297,8 +303,8 @@ append_executable_completions :: proc(names: ^[dynamic]string, prefix: string, a
 	}
 }
 
-append_file_completions :: proc(names: ^[dynamic]string, prefix: string, allocator := context.allocator) {
-	files, err := os.read_directory_by_path(".", -1, allocator)
+append_file_completions :: proc(names: ^[dynamic]string, dir, prefix: string, allocator := context.allocator) {
+	files, err := os.read_directory_by_path(dir, -1, allocator)
 	if err != nil do return
 
 	for f in files {
