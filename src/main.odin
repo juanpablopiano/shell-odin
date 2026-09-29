@@ -19,7 +19,7 @@ QuoteState :: enum {
 }
 
 @(rodata)
-BUILTINS := [?]string{"exit", "echo", "type", "pwd", "cd"}
+BUILTINS := [?]string{"exit", "echo", "type", "pwd", "cd", "complete"}
 PROMPT :: "$ "
 
 main :: proc() {
