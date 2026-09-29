@@ -155,8 +155,12 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 					os.write(os.stdout, []byte{'\b', ' ', '\b'})
 				}
 			case '\t':
-				prefix := strings.to_string(accumulator)
-				matches := find_completions(prefix, context.temp_allocator)
+				line := strings.to_string(accumulator)
+				idx := strings.last_index_byte(line, ' ')
+				prefix := line[idx + 1:]
+				matches := idx == -1 \
+					? find_command_completions(prefix, context.temp_allocator) \
+					: find_file_completions(prefix, context.temp_allocator)
 
 				switch len(matches) {
 				case 0:
@@ -172,7 +176,7 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 						os.write(os.stdout, []byte{0x07})
 					} else {
 						list := strings.join(matches, "  ", context.temp_allocator)
-						fmt.printf("\r\n%s\r\n%s%s", list, PROMPT, prefix)
+						fmt.printf("\r\n%s\r\n%s%s", list, PROMPT, line)
 					}
 				}
 			case:
@@ -195,7 +199,7 @@ insert_text :: proc(b: ^strings.Builder, text: string) {
 	os.write(os.stdout, transmute([]byte)text)
 }
 
-find_completions :: proc(prefix: string, allocator := context.allocator) -> []string {
+find_command_completions :: proc(prefix: string, allocator := context.allocator) -> []string {
 	if prefix == "" do return nil
 
 	names := make([dynamic]string, allocator)
@@ -206,6 +210,13 @@ find_completions :: proc(prefix: string, allocator := context.allocator) -> []st
 
 	slice.sort(names[:])
 	return slice.unique(names[:])
+}
+
+find_file_completions :: proc(prefix: string, allocator := context.allocator) -> []string {
+	names := make([dynamic]string, allocator)
+	append_file_completions(&names, prefix, allocator)
+	slice.sort(names[:])
+	return names[:]
 }
 
 is_delimiter :: proc(r: rune) -> bool {
@@ -283,6 +294,15 @@ append_executable_completions :: proc(names: ^[dynamic]string, prefix: string, a
 		for entry in entries {
 			if strings.has_prefix(entry.name, prefix) && is_executable(entry) do append(names, entry.name)
 		}
+	}
+}
+
+append_file_completions :: proc(names: ^[dynamic]string, prefix: string, allocator := context.allocator) {
+	files, err := os.read_directory_by_path(".", -1, allocator)
+	if err != nil do return
+
+	for f in files {
+		if strings.has_prefix(f.name, prefix) do append(names, f.name)
 	}
 }
 
