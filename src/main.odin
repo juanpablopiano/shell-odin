@@ -173,7 +173,7 @@ read_line :: proc(allocator := context.allocator) -> (line: string, ok: bool) {
 					os.write(os.stdout, []byte{0x07})
 				case 1:
 					insert_text(&accumulator, matches[0][len(base):])
-					insert_text(&accumulator, " ")
+					if !strings.has_suffix(matches[0], "/") do insert_text(&accumulator, " ")
 				case:
 					lcp := longest_common_prefix(matches[0], matches[len(matches)-1])
 					if len(lcp) > len(base) {
@@ -308,7 +308,10 @@ append_file_completions :: proc(names: ^[dynamic]string, dir, prefix: string, al
 	if err != nil do return
 
 	for f in files {
-		if strings.has_prefix(f.name, prefix) do append(names, f.name)
+		if strings.has_prefix(f.name, prefix) {
+			name := f.type == .Directory ? strings.concatenate({f.name, "/"}, allocator) : f.name
+			append(names, name)
+		}
 	}
 }
 
