@@ -65,6 +65,9 @@ main :: proc() {
 			if err := os.chdir(directory); err != nil {
 				fmt.fprintfln(errout, "cd: %v: No such file or directory", directory)
 			}
+		case "complete":
+			if len(args) < 2 || args[1] != "-p" do continue
+			fmt.printfln("complete: %v: no completion specification", args[2])
 		case "type":
 			if len(args) <= 1 do continue
 			name := args[1]
